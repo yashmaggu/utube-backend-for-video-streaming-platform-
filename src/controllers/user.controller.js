@@ -5,6 +5,24 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import {ApiResponse} from "../utils/ApiResponse.js"
 
 
+const generateAccessandRefreshTokens=async(userId)=>{
+  try{
+    const existingUser=User.findById(userId);
+
+    const accessTokens=existingUser.generateAccessTokens();
+    const refreshTokens=existingUser.generateRefreshTokens();
+      user.refreshTokens=refreshTokens;
+      //save will also push other commands to be checked example password
+      await user.save({validateBeforeSave:false});
+
+    return {accessTokens,refreshTokens};
+  }catch(error){
+    throw new ApiError(500,"something went wrong while generating refresh and access tokens")
+  }
+}
+
+
+
 const registeredUser=asyncHandler (async(req,res)=>{
   
   //get user from frontend
@@ -79,4 +97,54 @@ console.log(req.files);
 }
 )
 
-export { registeredUser };
+
+const loginUser=asyncHandler(async(req,res)=>{
+  //access the data from req.body
+  //retrive username,password
+
+  const {email,username,password}=req.body;
+  //we require either of 2 for login 
+  if(!username || !password){
+    throw new ApiError(400,"username or email is required")
+  }
+
+  //finding the existing user
+  const existingUser=await User.findOne({
+    $or:[{username},{email}]
+  })
+
+
+  //check if user not found 
+  if(!existingUser){
+    throw new ApiError(404,"user not found ")
+  }
+  
+  //checking if the password matches 
+  const isPassValid=await existingUser.isPasswordCorrect(password);
+
+  if(!isPassValid){
+    throw new ApiError(401,"wrong Password")
+  }
+
+
+  //now we have accessed refresh tokens and access tokens 
+  const {accessTokens,refreshTokens}=await generateAccessandRefreshTokens(existingUser._id);
+
+  const loggedInUse=await User.findById(existingUser._id).select("-password -refreshTokens")
+
+  //cookies 
+// Purpose: The httpOnly attribute is used to prevent client-side scripts from accessing the cookie. This helps mitigate the risk of cross-site scripting (XSS) attacks.
+// Value: When httpOnly is set to true, the cookie cannot be accessed via JavaScript (e.g., document.cookie).
+  const options={
+    httpOnly:true,
+    secure:true
+  }
+
+  return res
+        .status(200)
+        .cookie("accessTokens",accessTokens,options)
+        .cookie("refreshTokens",refreshTokens,options)
+        
+})
+
+export { registeredUser ,loginUser };
